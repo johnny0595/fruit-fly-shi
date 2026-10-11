@@ -1,0 +1,26 @@
+[project]
+name = "flybrain"
+version = "0.1.0"
+description = "A real fruit fly connectome (FlyWire v783, Shiu et al. LIF model) that paper-trades crypto"
+authors = [
+    { name = "Jonathan Duran-Ortiz", email = "jonathandurantula35@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.5.4",
+    "pandas>=3.0.6",
+    "pyarrow>=26.0.0",
+    "scipy>=1.18.1",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.15,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[project.scripts]
+flybrain = "flybrain.__main__:main"
