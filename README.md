@@ -1,45 +1,49 @@
-# flybrain — a real fruit fly connectome that trades crypto (on paper)
+# flybrain: a swarm of real fruit-fly nervous systems paper-trading crypto
 
-The whole adult *Drosophila* brain (FlyWire v783: 138,639 neurons, 15M connections,
-signed synapse counts) running as leaky integrate-and-fire neurons, a numpy port of
-[Shiu et al. 2024](https://github.com/philshiu/Drosophila_brain_model). Nothing is trained.
-Market data is fed into real sensory neurons, and trades are read from real motor and
-descending neurons.
+Each fly is the **BANC** connectome (Bates et al., Nature 2026): one female *Drosophila*'s whole
+central nervous system, brain **and** ventral nerve cord, with 169,078 neurons and 13.6M connections.
+Every neuron is a leaky integrate-and-fire unit from [Shiu et al. 2024](https://github.com/philshiu/Drosophila_brain_model).
+Six flies trade six coins at once, one brain each, simulated together. Nothing is trained.
 
 ```
-price rising   -> 20 sugar GRNs   ─┐                          ┌─> MN9 (proboscis / feeding)  -> long
-price falling  -> 42 bitter GRNs  ─┼─> 138,639 LIF neurons ───┤
-crash candle   -> 314 LC4/LPLC2   ─┘   real FlyWire wiring     └─> DNp01 Giant Fibre (escape) -> flat
+3-candle momentum up   -> 90 labellum sugar neurons ┐                        ┌> MN9 rate      -> position size
+3-candle momentum down -> 48 labellum bitter        │                        ├> MDN fires     -> halve it
+24-candle trend up/down-> 367 leg taste neurons     ├> 169,078 LIF neurons ──┤
+crash candle           -> 294 LC4/LPLC2 looming     ┘   brain + nerve cord   └> Giant Fibre   -> sell everything
+                                                                                (-> TTMn jump muscle in the nerve cord)
 ```
 
 ## Run
 
 ```sh
-uv run flybrain probe                              # check the circuits reproduce known biology
-uv run flybrain backtest BTC-USD --gran 3600       # replay 500 hourly candles (~3 min)
-uv run flybrain live ETH-USD --gran 300 --cash 1000  # paper-trade new candles as they close
+uv run flybrain probe        # check sugar->MN9, bitter suppression, looming->Giant Fibre->TTMn, lesion
+uv run flybrain export       # 6-coin backtest -> dashboard/brain.json + swarm.json (~12 min)
+uv run flybrain install      # trade forever as a background service; dashboard at http://localhost:8765
+uv run flybrain status       # is it running, last log lines
+uv run flybrain uninstall    # stop it (the trade log in results/live/ is kept)
 uv run pytest
 ```
 
-The first run downloads about 135 MB into `data/`. Results go to `results/`.
+The first run downloads about 420 MB of BANC data from Harvard Dataverse into `data/banc/`.
 
-## Sanity check (`flybrain probe`, 300 ms per trial)
+The service runs `flybrain live` under launchd. It starts at login, restarts within 30 s if it crashes,
+and replays any 5-minute candles it missed while the Mac was asleep. Every decision of every fly is appended
+to `results/live/decisions.csv`.
 
-| stimulus | MN9 | Giant Fibre |
-|---|---|---|
-| nothing | 0 Hz | 0 Hz |
-| sugar 100 Hz | 70 Hz | 0 |
-| sugar + bitter | 0 Hz | 0 |
-| looming 150 Hz | 0 | 267 Hz |
-| looming, LC4/LPLC2 output lesioned | 0 | 0 |
+## Model notes
 
-## What's real and what's made up
+- **Transmitter signs** come from, in order: BANC's verified transmitter, Shiu's FAFB sign for the matched
+  neuron, then BANC's prediction. Predictions alone leave the GABAergic APL neuron excitatory and the olfactory
+  system seizes.
+- **Smell and wind inputs were dropped.** Even with corrected signs, the antennal lobe's reciprocal excitation
+  runs away into a self-sustaining seizure in this model, because LIF neurons never tire. `Params(adapt=...)`
+  adds spike-frequency adaptation for experiments. It is off by default, so the model stays pure Shiu.
+- **Each candle is a fresh 150 ms trial from rest**, so a runaway can never carry into later trades.
+- **Speed:** one candle for all six flies (6 × 150 ms of brain time) takes about 2.3 s on an M1 Max CPU, which is
+  plenty for 5-minute candles. No GPU needed.
 
-- **Real:** the wiring, synapse counts, neurotransmitter signs, and neuron identities. The sugar to MN9 and looming to Giant Fibre pathways come from the connectome.
-- **Model (Shiu et al.):** identical LIF neurons, 0.275 mV per synapse, no plasticity, no neuromodulation.
-- **Made up by me:** the market-to-sensory encoding in `trader.py` (`senses`) and the action mapping (MN9 means long, Giant Fibre means flat).
+## Results so far
 
-In practice the fly works as a momentum filter. It feeds once 3-candle momentum is above about +1σ
-and flees on sharp drops. The filter is built from biology rather than tuned. **There is no reason to
-expect it to make money.** On the first BTC hourly backtest (Sep 18 to Oct 11 2026) it lost 3.4% gross
-and 10.6% after 0.1% fees, while buy-and-hold made 3.1%.
+Backtest on 324 hourly candles ending Oct 11 2026: every fly lost money (−1.5% to −5.8%). In a falling market,
+5 of 6 lost less than buy-and-hold because they sat in cash about 88% of the time. It is a momentum filter built from
+a fly. Don't trade with it.

@@ -8,6 +8,14 @@ reveals sensorimotor processing"), originally written in Brian2:
     v > v_th  ->  spike;  v = v_rst, g = 0, refractory for t_rfc
     presynaptic spike  ->  g_post += n_syn * sign * w_syn   after t_dly
 
+Optional spike-frequency adaptation (off by default, i.e. pure Shiu):
+
+    dv/dt = (v_0 - v + g - a) / t_mbr,   da/dt = -a / tau_a,   spike -> a += adapt
+
+Real neurons tire when they fire fast. Without this, strongly reciprocal excitatory
+pairs in the whole-CNS (BANC) wiring can ping-pong forever: a seizure the
+brain-only FAFB model never hit.
+
 Sensory neurons are driven by Poisson inputs whose every event kicks v by
 w_syn * f_poi = 68.75 mV, i.e. each input event forces a spike (as in Shiu).
 
@@ -36,6 +44,8 @@ class Params:
     t_dly: float = 1.8  # ms synaptic delay
     w_syn: float = 0.275  # mV per synapse -- the model's one free parameter
     f_poi: float = 250.0  # Poisson input scale (w_syn * f_poi = 68.75 mV kick)
+    adapt: float = 0.0  # mV added to the adaptation current per spike (0 = pure Shiu)
+    tau_a: float = 100.0  # ms adaptation decay
 
 
 class Brain:
@@ -50,10 +60,12 @@ class Brain:
         self.weights = connectome.weights * np.float32(params.w_syn)  # mV
         self.v = np.full(size, params.v_0, dtype=np.float32)
         self.g = np.zeros(size, dtype=np.float32)
+        self.a = np.zeros(size, dtype=np.float32) if params.adapt else None
         self.step_count = 0
 
         self._mbr = np.float32(params.dt / params.t_mbr)
         self._decay = np.float32(np.exp(-params.dt / params.tau))
+        self._decay_a = np.float32(np.exp(-params.dt / params.tau_a))
         self._rfc_steps = int(round(params.t_rfc / params.dt))
         self._delay_steps = int(round(params.t_dly / params.dt))
         empty = np.empty(0, np.int64)
@@ -64,6 +76,16 @@ class Brain:
         self._stim_idx = empty
         self._stim_p = np.empty(0, np.float64)
         self._silenced = np.zeros(self.N, dtype=bool)
+
+    def reset(self) -> None:
+        """Back to rest: every fly starts the next trial fresh."""
+        self.v.fill(self.p.v_0)
+        self.g.fill(0.0)
+        if self.a is not None:
+            self.a.fill(0.0)
+        empty = np.empty(0, np.int64)
+        self._pending = [empty] * self._delay_steps
+        self._refractory = [empty] * self._rfc_steps
 
     # ---- inputs -------------------------------------------------------------
     def set_input(self, drives: list[list[tuple[np.ndarray, float]]] | None) -> None:
@@ -111,6 +133,9 @@ class Brain:
 
         dv = self.g - self.v
         dv += p.v_0
+        if self.a is not None:
+            dv -= self.a
+            self.a *= self._decay_a
         dv *= self._mbr
         self.v += dv
         self.g *= self._decay
@@ -124,6 +149,8 @@ class Brain:
         if spiked.size:
             self.v[spiked] = p.v_rst
             self.g[spiked] = 0.0
+            if self.a is not None:
+                self.a[spiked] += p.adapt
         self._refractory[t % self._rfc_steps] = spiked[~self._poisson_target[spiked]]
 
         slot = t % self._delay_steps  # spikes emitted t_dly ago arrive now

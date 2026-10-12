@@ -16,14 +16,40 @@ def chain(weight: float) -> Connectome:
 
 def drive(c: Connectome, lesion: bool = False) -> np.ndarray:
     b = Brain(c, seed=0)
-    b.set_input(idx=np.array([0]), rates=np.array([200.0]))
+    b.set_input([[(np.array([0]), 200.0)]])
     if lesion:
         b.silence(np.array([0]))
-    return b.run(200.0)
+    return b.run(200.0)[0]
 
 
 def test_silent_brain_stays_silent():
     assert Brain(chain(50), seed=0).run(100.0).sum() == 0
+
+
+def test_flies_in_a_swarm_are_independent():
+    b = Brain(chain(50), n_flies=3, seed=0)
+    b.set_input([[], [(np.array([0]), 200.0)], []])
+    counts = b.run(200.0)
+    assert counts[0].sum() == 0 and counts[2].sum() == 0
+    assert counts[1, 0] > 0 and counts[1, 1] > 0
+
+
+def test_reset_returns_to_rest():
+    b = Brain(chain(50), seed=0)
+    b.set_input([[(np.array([0]), 200.0)]])
+    b.run(50.0)
+    b.reset()
+    b.set_input(None)
+    assert b.run(50.0).sum() == 0
+
+
+def test_adaptation_slows_a_driven_neuron():
+    from flybrain.brain import Params
+    plain = Brain(chain(50), seed=0)
+    tired = Brain(chain(50), params=Params(adapt=5.0), seed=0)
+    for b in (plain, tired):
+        b.set_input([[(np.array([0]), 400.0)]])
+    assert tired.run(200.0)[0, 1] < plain.run(200.0)[0, 1]
 
 
 def test_poisson_input_forces_spikes_at_rate():
